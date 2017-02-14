@@ -7,12 +7,11 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/openpgp/packet"
-	"log"
 )
 
 func ActionKeyGen(message ProtocolMessage) string {
 	if message.Name == "" || message.Email == "" || message.Passphrase == "" {
-		return ErrorResponse("Mandatory field left blank")
+		return ErrorResponse(&message, "Mandatory field left blank")
 	}
 	
 
@@ -29,11 +28,11 @@ func ActionKeyGen(message ProtocolMessage) string {
 	}
 	pribuf, err := entityPrivateArmor(entity)
 	if err != nil {
-		return ErrorResponse("Error encoding private key armor")
+		return ErrorResponse(&message, "Error encoding private key armor")
 	}
 	pubbuf, err := entityPublicArmor(entity)
 	if err != nil {
-		return ErrorResponse("Error encoding public key armor")
+		return ErrorResponse(&message, "Error encoding public key armor")
 	}
 	
 	return JsonKeyPair(pubbuf, pribuf)
@@ -41,7 +40,7 @@ func ActionKeyGen(message ProtocolMessage) string {
 
 func ActionExpandKey(message ProtocolMessage) string {
 	if message.PublicKey == "" {
-		return ErrorResponse("Mandatory field left blank")
+		return ErrorResponse(&message, "Mandatory field left blank")
 	}
 	
 	
@@ -50,17 +49,19 @@ func ActionExpandKey(message ProtocolMessage) string {
 	block, err := armor.Decode(bufr)
 	
 	if err != nil {
-		log.Fatal("Error decoding", err) // ToDo: Change to error response
+		return ErrorResponse(&message, "Error decoding public armor")
 	}
 	
 	if block.Type != openpgp.PublicKeyType {
-		return ErrorResponse("Does not decode to public key")
+		return ErrorResponse(&message, "Does not decode to public key")
 	}
 	
 	blockr := packet.NewReader(block.Body)
 	entity, err := openpgp.ReadEntity(blockr)
 	
-	
+	if err != nil {
+		return ErrorResponse(&message, "Error decoding public entity from block")
+	}	
 	var name, email, keyid string
 	var m string
 	for _, ident := range entity.Identities {
@@ -90,7 +91,7 @@ func ActionExpandKey(message ProtocolMessage) string {
 
 func ActionSignKey(message ProtocolMessage) string {
 	if message.PublicKey == "" || message.PrivateKey == "" || message.Passphrase == "" {
-		return ErrorResponse("Mandatory field left blank")
+		return ErrorResponse(&message, "Mandatory field left blank")
 	}
 	
 	
@@ -99,21 +100,21 @@ func ActionSignKey(message ProtocolMessage) string {
 	
 	blockpub, err := armor.Decode(pubr)
 	if err != nil {
-		return ErrorResponse("Error decoding public armor")
+		return ErrorResponse(&message, "Error decoding public armor")
 	}
 	
 	blockpri, err := armor.Decode(prir)
 	if err != nil {
-		return ErrorResponse("Error decoding private armor")
+		return ErrorResponse(&message, "Error decoding private armor")
 	}
 	
 
 	if blockpub.Type != openpgp.PublicKeyType {
-		return ErrorResponse("Does not decode as public key")
+		return ErrorResponse(&message, "Does not decode as public key")
 	}
 	
 	if blockpri.Type != openpgp.PrivateKeyType {
-		return ErrorResponse("Does not decode as private key")
+		return ErrorResponse(&message, "Does not decode as private key")
 	}
 	
 	bpubr := packet.NewReader(blockpub.Body)
@@ -121,16 +122,16 @@ func ActionSignKey(message ProtocolMessage) string {
 	
 	entitypub, err := openpgp.ReadEntity(bpubr)
 	if err != nil {
-		return ErrorResponse("Error decoding public entity")
+		return ErrorResponse(&message, "Error decoding public entity from block")
 	}
 	entitypri, err := openpgp.ReadEntity(bprir)
 	if err != nil {
-		return ErrorResponse("Error decoding private entity")
+		return ErrorResponse(&message, "Error decoding private entity from block")
 	}
 	
 	err = entitypri.PrivateKey.Decrypt([]byte(message.Passphrase))
 	if err != nil {
-		return ErrorResponse("Bad passphrase")
+		return ErrorResponse(&message, "Bad passphrase")
 	}
 	
 	for _,v := range entitypub.Identities  {
@@ -139,11 +140,11 @@ func ActionSignKey(message ProtocolMessage) string {
 
 
 	if err != nil {
-		return ErrorResponse(err.Error())
+		return ErrorResponse(&message,err.Error())
 	}
 	armor, err := entityPublicArmor(entitypub)
 	if err != nil {
-		return ErrorResponse(err.Error())
+		return ErrorResponse(&message,err.Error())
 	}
 
 	return JsonPublicKey(armor)
@@ -151,7 +152,7 @@ func ActionSignKey(message ProtocolMessage) string {
 
 func ActionUpdateKey(message ProtocolMessage) string {
 	if message.PublicKey == "" || message.SubjectKey == "" {
-		return ErrorResponse("Mandatory field left blank")
+		return ErrorResponse(&message, "Mandatory field left blank")
 	}
 	
 	pubr := bytes.NewReader([]byte(message.PublicKey))
@@ -159,12 +160,12 @@ func ActionUpdateKey(message ProtocolMessage) string {
 	
 	blockpub, err := armor.Decode(pubr)
 	if err != nil {
-		return ErrorResponse("Error decoding public armor")
+		return ErrorResponse(&message, "Error decoding public armor")
 	}
 	
 	blocksub, err := armor.Decode(subr)
 	if err != nil {
-		return ErrorResponse("Error decoding subject armor")
+		return ErrorResponse(&message, "Error decoding subject armor")
 	}
 	
 	bpubr := packet.NewReader(blockpub.Body)
@@ -172,11 +173,11 @@ func ActionUpdateKey(message ProtocolMessage) string {
 	
 	entitypub, err := openpgp.ReadEntity(bpubr)
 	if err != nil {
-		return ErrorResponse("Error decoding public entity")
+		return ErrorResponse(&message, "Error decoding public entity from block")
 	}
 	entitysub, err := openpgp.ReadEntity(bsubr)
 	if err != nil {
-		return ErrorResponse("Error decoding subject entity")
+		return ErrorResponse(&message, "Error decoding subject entity from block")
 	}
 	
 	for name, identity := range entitypub.Identities {
@@ -198,7 +199,7 @@ func ActionUpdateKey(message ProtocolMessage) string {
 
 	armor, err := entityPublicArmor(entitysub)
 	if err != nil {
-		return ErrorResponse(err.Error())
+		return ErrorResponse(&message,err.Error())
 	}
 
 	return JsonPublicKey(armor)

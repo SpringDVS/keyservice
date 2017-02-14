@@ -1,12 +1,20 @@
 package main
 
 import (
+	"log"
 	"encoding/json"
+	"encoding/hex"
+	"crypto/sha256"
+	"math/rand"
+	"time"
+	"strconv"
 )
 
 type ProtocolAction int
 
-func ErrorResponse(message string) string {
+func ErrorResponse(protomsg *ProtocolMessage, message string) string {
+	
+	log.Println("Failed to perform action -- " + message + " [ "+protomsg.InteractionId+" ]")
 	return "{\"result\":\"error\",\"response\":\"" + message + "\"}"
 }
 
@@ -25,6 +33,7 @@ type ProtocolData struct {
 }
 
 type ProtocolMessage struct {
+	InteractionId,
 	PublicKey,
 	PrivateKey,
 	SubjectKey,
@@ -33,11 +42,13 @@ type ProtocolMessage struct {
 	Email string
 }
 
-func MessageFromString(bytes []byte) (ProtocolMessage, error) {
+func MessageFromString(bytes []byte, iid string) (ProtocolMessage, error) {
+	
 	var f interface{}
 	
 	message := ProtocolMessage{}
 	
+	message.InteractionId = iid
 	err := json.Unmarshal(bytes, &f)
 	
 	if err != nil {
@@ -55,7 +66,17 @@ func MessageFromString(bytes []byte) (ProtocolMessage, error) {
 			case "passphrase": message.Passphrase = v
 		}
 	}
-	return message,nil
+		return message,nil
+}
+
+func GenerateInteractionId() string {
+	hasher := sha256.New224()
+	partA := strconv.FormatInt(time.Now().UnixNano(), 16);
+	rand.Seed(time.Now().UnixNano())
+	partB := strconv.FormatInt(rand.Int63(), 16);
+	
+	hasher.Write([]byte(string(partA + partB)))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 func JsonKeyPair(public, private string) string {
